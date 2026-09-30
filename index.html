@@ -79,7 +79,16 @@ header button{padding:6px 11px;min-width:38px}
 .cur{color:var(--good);font-size:13px;padding:0 8px;flex:none}
 #sheetX{width:100%}
 .hint{font-size:13px;color:var(--muted);margin:8px 0 0}
-header h1{line-height:1.1}header h1 small{display:block;font:500 11px system-ui,sans-serif;letter-spacing:.04em;color:var(--muted);margin-top:2px}.brand{margin-top:22px;font-size:12px;letter-spacing:.04em;color:var(--muted)}</style>
+header h1{line-height:1.1}header h1 small{display:block;font:500 11px system-ui,sans-serif;letter-spacing:.04em;color:var(--muted);margin-top:2px}.brand{margin-top:22px;font-size:12px;letter-spacing:.04em;color:var(--muted)}#lock{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+#lock[hidden]{display:none}
+#lock .box{width:100%;max-width:380px;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:28px 22px;box-shadow:var(--sh)}
+#lock .logo{width:52px;height:52px;font-size:30px;margin:0 auto 12px}
+#lock h2{font:500 26px var(--serif);margin:0 0 6px}
+#lock p{color:var(--muted);margin:0 0 16px;font-size:14px}
+#lock input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:var(--text);font:inherit;text-align:center;margin-bottom:10px}
+#lock button{width:100%;background:var(--accent);color:var(--accent-t);border-color:var(--accent);font-weight:600;min-height:44px}
+#lockMsg{color:var(--bad);font-size:13px;min-height:18px;margin:8px 0 0}
+</style>
 </head>
 <body>
 <header>
@@ -129,6 +138,8 @@ header h1{line-height:1.1}header h1 small{display:block;font:500 11px system-ui,
   <textarea id="in" rows="1" placeholder="Build me a… (or describe a change)" aria-label="Request"></textarea>
   <button id="go" type="submit">Build</button>
 </form>
+<div id="lock"><div class="box"><div class="logo">✻</div><h2>Friends only</h2><p>Enter the passcode from the app owner.<br>Neutron by K.D App Developer</p>
+<form id="lockForm" autocomplete="off"><input id="lockIn" type="password" placeholder="Passcode" autocapitalize="off" autocomplete="off" aria-label="Passcode"><button type="submit">Unlock</button></form><div id="lockMsg" role="alert"></div></div></div>
 <div id="sheet" hidden><div class="card" role="dialog" aria-modal="true"><div id="sheetBody"></div><button id="sheetX" type="button">Close</button></div></div>
 <script>
 const LT = '<', GT = '>';
@@ -448,6 +459,41 @@ function showSettings() {
 }
 $('projBtn').onclick = showProjects; $('setBtn').onclick = showSettings;
 heroText();
+
+// ---- friends passcode lock (light protection only: the check runs inside the page)
+const PASS_HASH = '555b29f578fc810cf3ef2f875042775d83efeb9c2808029ff2c64e3b920a1882'; // sha256("neutron|" + lowercase passcode). Set to '' to remove the lock.
+function sha256(ascii) {
+  function rr(v, a) { return (v >>> a) | (v << (32 - a)); }
+  var mp = Math.pow, mw = mp(2, 32), i, j, result = '', words = [], abl = ascii.length * 8;
+  var hash = sha256.h = sha256.h || [], k = sha256.k = sha256.k || [], pc = k.length, comp = {};
+  for (var c = 2; pc < 64; c++) { if (!comp[c]) { for (i = 0; i < 313; i += c) comp[i] = c; hash[pc] = (mp(c, .5) * mw) | 0; k[pc++] = (mp(c, 1 / 3) * mw) | 0; } }
+  ascii += '\x80'; while (ascii.length % 64 - 56) ascii += '\x00';
+  for (i = 0; i < ascii.length; i++) { j = ascii.charCodeAt(i); if (j >> 8) return ''; words[i >> 2] |= j << ((3 - i) % 4) * 8; }
+  words[words.length] = ((abl / mw) | 0); words[words.length] = abl;
+  for (j = 0; j < words.length;) {
+    var w = words.slice(j, j += 16), old = hash; hash = hash.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      var w15 = w[i - 15], w2 = w[i - 2], a = hash[0], e = hash[4];
+      var t1 = hash[7] + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & hash[5]) ^ ((~e) & hash[6])) + k[i] + (w[i] = (i < 16) ? w[i] : (w[i - 16] + (rr(w15, 7) ^ rr(w15, 18) ^ (w15 >>> 3)) + w[i - 7] + (rr(w2, 17) ^ rr(w2, 19) ^ (w2 >>> 10))) | 0);
+      var t2 = (rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+      hash = [(t1 + t2) | 0].concat(hash); hash[4] = (hash[4] + t1) | 0;
+    }
+    for (i = 0; i < 8; i++) hash[i] = (hash[i] + old[i]) | 0;
+  }
+  for (i = 0; i < 8; i++) for (j = 3; j + 1; j--) { var b = (hash[i] >> (j * 8)) & 255; result += ((b < 16) ? 0 : '') + b.toString(16); }
+  return result;
+}
+(function () {
+  const L = $('lock'); let saved = ''; try { saved = localStorage.getItem('neutron:unlock') || ''; } catch (e) {}
+  if (!PASS_HASH || saved === PASS_HASH) { L.hidden = true; return; }
+  L.hidden = false;
+  $('lockForm').onsubmit = e => {
+    e.preventDefault();
+    const v = $('lockIn').value.trim().toLowerCase();
+    if (sha256('neutron|' + v) === PASS_HASH) { try { localStorage.setItem('neutron:unlock', PASS_HASH); } catch (x) {} L.hidden = true; $('lockIn').value = ''; $('lockMsg').textContent = ''; }
+    else $('lockMsg').textContent = 'Wrong passcode. Ask the app owner.';
+  };
+})();
 ui(); run();
 try { if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
 </script>
